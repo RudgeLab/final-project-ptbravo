@@ -12,6 +12,7 @@ class person():
     # They can have different speeds
     def __init__(self, id):
         self.speed = np.random.choice([1,2,3])
+        #self.speed = 1
         self.set = 0    # Set of staircases
         self.lane = 0   # Lane on set
         self.pos = 0    # Position on lane
@@ -20,7 +21,7 @@ class person():
         self.end = 0    # timestep in which they finished staircase
         self.type = np.random.choice(['A', 'B'])
 
-    def to_reserve(self, reserve):
+    def to_reserve(self, reserve, t):
         self.end = t
         reserve.current.append(self.id)
 
@@ -39,7 +40,7 @@ class reserve():
         self.flux = 0
 
 
-    def update(self):
+    def update(self, t):
         temporal = []
         F.append(len(self.current))
         for index in self.current:
@@ -50,9 +51,7 @@ class reserve():
                 self.current.remove(index)
                 self.positions[index - 1] = 0
         self.flux += len(temporal)
-        #F.append(nlen(temporal))
-        print(self.flux)
-        #self.OUT.feed(temporal)
+        self.OUT.feed(temporal, t)
 
     def platform(self, N, train_doors, door_pos):
         for p in P:
@@ -65,7 +64,7 @@ class reserve():
         self.positions = np.asarray(D)
 
 class staircase_set():
-    def __init__(self, id = 1, length = 100, mspeed = [1,1,0,0,0,0]):
+    def __init__(self, id = 1, length = 100, mspeed = [1,1,0,0,1,1]):
         self.length = length
         self.mspeed = np.asarray(mspeed)    # Mechanical staircase speed
         self.matrix = np.zeros([len(self.mspeed), self.length], int)
@@ -102,8 +101,7 @@ class staircase_set():
             if self.matrix[l, self.length - 1] != 0:
                 if np.random.rand() <= Beta:
                     value = self.matrix[l, self.length - 1]
-                    P[value - 1].to_reserve(r_out)
-                    #r_out.append(value)
+                    P[value - 1].to_reserve(r_out, t)
                     self.matrix[l, self.length - 1] = 0
 
             # Update middle
@@ -114,97 +112,111 @@ class staircase_set():
                         self.matrix[l, i + pmov] = self.matrix[l, i]
                         self.matrix[l,i] = 0
 
-    def feed(lista):
+    def contar(self):
+        # Counts the number of people in the staircase_set
+        c = 0
+        for i in range(len(self.mspeed)):
+            for j in range(self.length):
+                if self.matrix[i,j] != 0:
+                    c += 1
+        return c
+
+    def walkers(self):
+        n = 0
+        m = 0
+        for i in range(len(self.mspeed)):
+            for j in range(self.length):
+                if self.mspeed[i] == 1:
+                    if self.matrix[i,j] != 0:
+                        m += 1
+                if self.mspeed[i] == 0:
+                    if self.matrix[i,j] != 0:
+                        n += 1
+        return n,m
+
+    def feed(self, lista, t):
         # Fills the beginning positions, waitlist is only for mechanical stairs
         # The persons in the lista roll for waitlist or normal stairs.
 
-        f = [] #Free mechanical stair indexes
+        # Fill Mechanical stairs
         for f in range(len(self.mspeed)):
-            if self.matrix[f,0] == 0:
+            if (self.matrix[f,0] == 0) and (self.mspeed[f] == 1):
                 if self.wait_line != []:
+                    P[self.wait_line[0]-1].start = t
                     self.matrix[f,0] = self.wait_line.pop(0)
-                if (lista != 0) and (self.matrix[f,0] == 0):
-                    self.matrix[f,0] lista.pop(0)
+                if (lista != []) and (self.matrix[f,0] == 0):
+                    P[lista[0]-1].start = t
+                    self.matrix[f,0] = lista.pop(0)
 
-        for j in range(len(lista))
-            if np.random.rand() < w:
-                self.wait_line.append(per)
+        while lista != []:      # Iterate until we clear it
+            roll = np.random.rand()
+            if roll < w:
+                cont = 1
+                for l in range(len(self.mspeed)):
+                    if cont == 1:
+                        if (self.matrix[l,0] == 0) and (self.mspeed[l] == 0):
+                            P[lista[0]-1].start = t
+                            self.matrix[l,0] = lista.pop(0)
+                            cont = 0
+                if cont == 1:
+                    v = lista.pop(0)
+                    self.wait_line.append(v)
             else:
-                for i in range(len(self.mspeed)):
-                    if (self.mspeed[i] == 0) and (self.matrix[i,0] == 0):
+                v = lista.pop(0)
+                self.wait_line.append(v)
 
+""" MAIN MAIN MAIN MAIN """
 # Variables
-T = 40
+T = 200
 alpha = 1
 Beta = 1
 p = 0.8
+w = 0
 n_of_persons = 100
 ts = 60
 
-# Simulation
-P = []      # List of persons
-R_in = []
-I = []      # Incoming people
-O = []      # Outgoing people
+# Script Variables
+N = []
+M = []
+I = []
+O = []
+Total = []
+Waiting = []
+P = []
+F = []
+Numero = []
 
 # Add persons to person list
 for i in reversed(range(1, n_of_persons)):
     P.append(person(i))
-    R_in.append(i)
-
 # Generate staircases and Reserves
 S1 = staircase_set()
 R0 = reserve(20, [], S1)
 R0.platform(n_of_persons,4,1)   # Generate
 R1 = reserve(20, S1, [])
-F = []
 
 # Update in time
 for t in range(T):
-    #S1.update(R_in, R1, t)
-    R0.update()
-    #I.append(len(R_in))
-    #O.append(len(R1.current))
+    #Save Data
+    n, m = S1.walkers()
+    N.append(n)
+    M.append(m)
+    Numero.append(S1.contar())
+    I.append(len(R0.current))
+    O.append(len(R1.current))
+    Waiting.append(len(S1.wait_line))
+    Total.append(n+m+len(R0.current)+len(R1.current)+len(S1.wait_line))
 
-# Plotting
+    # Update simulation
+    S1.update(R0, R1, t)
+    R0.update(t)
+
 plt.figure()
-plt.plot(F)
-plt.title("Current starting algorithm")
-plt.xlabel("Timesteps")
-plt.ylabel("People in platform")
-plt.show()
-ST = []
-E = []
-C = []
-Speed = []
-for person in P:
-    ST.append(person.start)
-    E.append(person.end)
-    Speed.append(person.speed)
-    if S1.mspeed[person.lane] == 1:
-        C.append('r')
-    else:
-        C.append('b')
-ST = np.asarray(ST)
-E = np.asarray(E)
-T = E-ST
-
-plt.close()
-plt.suptitle("p ="+str(p))
-plt.subplot(311)
-plt.scatter(ST,T, c=C)
-plt.xlabel("Time to door")
-plt.ylabel("Travel time")
-plt.subplot(312)
-plt.plot(I, label = "In")
-plt.plot(O, label = "Out")
-plt.xlabel("Timestep")
-plt.ylabel("Travel time")
+plt.plot(I, label = "Plataforma")
+plt.plot(O, label = "Fuera")
+plt.plot(Total, label = "Total")
+plt.plot(N, label = "Normal")
+plt.plot(M, label = "Mechanical")
+plt.plot(Waiting, label = "waiting")
 plt.legend()
-plt.subplot(313)
-plt.scatter(T, Speed)
-plt.xlabel("Travel Time")
-plt.ylabel("Speed")
-#plt.tight_layout()
 plt.show()
-# final-project-ptbravo
