@@ -10,9 +10,9 @@ from scipy.stats import truncnorm
 class person():
     # 'Particles' that move on staircases
     # They can have different speeds
-    def __init__(self, id):
-        self.speed = np.random.choice([1,2,3])
-        #self.speed = 1
+    def __init__(self, id, av_speed):
+        self.speed = 0
+        self.av_speed = av_speed
         self.set = 0    # Set of staircases
         self.lane = 0   # Lane on set
         self.pos = 0    # Position on lane
@@ -25,8 +25,19 @@ class person():
         self.end = t
         reserve.current.append(self.id)
 
-    def to_stair(self, reserve):
-        return 0
+    def roll_speed(self):
+        delta = self.av_speed - 1
+        roll = np.random.rand()
+        if delta <= 0:
+            if roll <= np.abs(delta):
+                self.speed = 0
+            else:
+                self.speed = 1
+        if delta > 0:
+            if roll <= np.abs(delta):
+                self.speed = 2
+            else:
+                self.speed = 1
 
 class reserve():
     # Keeps track and sets order for incoming "waves of people"
@@ -42,7 +53,6 @@ class reserve():
 
     def update(self, t):
         temporal = []
-        F.append(len(self.current))
         for index in self.current:
             self.positions[index - 1] -= P[index - 1].speed
         for index in self.current:
@@ -112,16 +122,8 @@ class staircase_set():
                         self.matrix[l, i + pmov] = self.matrix[l, i]
                         self.matrix[l,i] = 0
 
-    def contar(self):
-        # Counts the number of people in the staircase_set
-        c = 0
-        for i in range(len(self.mspeed)):
-            for j in range(self.length):
-                if self.matrix[i,j] != 0:
-                    c += 1
-        return c
-
     def walkers(self):
+        # Types of walkers in staircase_set()
         n = 0
         m = 0
         for i in range(len(self.mspeed)):
@@ -137,15 +139,15 @@ class staircase_set():
     def feed(self, lista, t):
         # Fills the beginning positions, waitlist is only for mechanical stairs
         # The persons in the lista roll for waitlist or normal stairs.
+        for index in lista:
+            P[index-1].start = t
 
         # Fill Mechanical stairs
         for f in range(len(self.mspeed)):
             if (self.matrix[f,0] == 0) and (self.mspeed[f] == 1):
                 if self.wait_line != []:
-                    P[self.wait_line[0]-1].start = t
                     self.matrix[f,0] = self.wait_line.pop(0)
                 if (lista != []) and (self.matrix[f,0] == 0):
-                    P[lista[0]-1].start = t
                     self.matrix[f,0] = lista.pop(0)
 
         while lista != []:      # Iterate until we clear it
@@ -155,7 +157,6 @@ class staircase_set():
                 for l in range(len(self.mspeed)):
                     if cont == 1:
                         if (self.matrix[l,0] == 0) and (self.mspeed[l] == 0):
-                            P[lista[0]-1].start = t
                             self.matrix[l,0] = lista.pop(0)
                             cont = 0
                 if cont == 1:
@@ -170,25 +171,27 @@ class staircase_set():
 T = 200
 alpha = 1
 Beta = 1
-p = 0.8
-w = 0
-n_of_persons = 100
+p = 1
+w = 0.5   # w = 0 is all wait
+n_of_persons = 200
 ts = 60
 
 # Script Variables
-N = []
-M = []
-I = []
-O = []
-Total = []
-Waiting = []
-P = []
-F = []
-Numero = []
+N = []          # People in normal staircases
+M = []          # People in mechanical %
+I = []          # People in the platform
+O = []          # People that is out
+Total = []      # Total of people
+Waiting = []    # People waiting for mechanical staircase
+P = []          # List of People(as the class)
+
+# Generate speed distrubution as in walking speed paper
+speed_distr = np.random.normal(1.32, 0.15, n_of_persons)
 
 # Add persons to person list
 for i in reversed(range(1, n_of_persons)):
-    P.append(person(i))
+    P.append(person(i, speed_distr[i]))
+
 # Generate staircases and Reserves
 S1 = staircase_set()
 R0 = reserve(20, [], S1)
@@ -201,22 +204,39 @@ for t in range(T):
     n, m = S1.walkers()
     N.append(n)
     M.append(m)
-    Numero.append(S1.contar())
     I.append(len(R0.current))
     O.append(len(R1.current))
     Waiting.append(len(S1.wait_line))
     Total.append(n+m+len(R0.current)+len(R1.current)+len(S1.wait_line))
 
     # Update simulation
+    for persona in P:
+        persona.roll_speed()
     S1.update(R0, R1, t)
     R0.update(t)
 
+# Get starting and finishing times
+S = []
+F = []
+Travel_time = []
+for p in P:
+    S.append(p.start)
+    F.append(p.end)
+    Travel_time.append(p.end-p.start)
+
 plt.figure()
+plt.subplot(211)
 plt.plot(I, label = "Plataforma")
 plt.plot(O, label = "Fuera")
 plt.plot(Total, label = "Total")
 plt.plot(N, label = "Normal")
 plt.plot(M, label = "Mechanical")
 plt.plot(Waiting, label = "waiting")
+plt.xlabel("Timestep")
+plt.ylabel("Number of persons")
 plt.legend()
+plt.subplot(212)
+plt.scatter(S, Travel_time)
+plt.xlabel("Time to door")
+plt.ylabel("Travel time")
 plt.show()
