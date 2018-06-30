@@ -8,6 +8,9 @@ The core algotihm behind the script is the Totally Asymmetric Exclusion Process 
 There are 4 codes uploaded.
 
 metro.py : Simulation for a single set of staricases.
+
 job.sh : Script to iterate over the parameters and sample behavior of the script.
+
 analysis.py : Plot and analyze data from said sampling.
+
 nuble.py : Simulation for the L6-L5 Nuble staircase configuration.
