@@ -1,6 +1,6 @@
 # IIQ 3763 Project - 2018-1
 # Staircases and Mechanical Staircases, TASEP
-# Single staircase sim
+# L6 to L5 Transfer at Nuble Station, Metro Santiago
 # Pablo Bravo   ptbravo@uc.cl
 
 import numpy as np
@@ -16,7 +16,7 @@ class person():
         self.speed = 0
         self.av_speed = av_speed
         self.lane = 0   # Lane on set
-        self.id = id    # identification
+        self.id = id
         self.start = 0  # timestep in which they joined staircase
         self.end = 0    # timestep in which they finished staircase
         self.type = type    # Walker or stopper
@@ -29,12 +29,12 @@ class person():
         return (id + '\t' + av_speed + '\t' + p_type)
 
     def to_reserve(self, reserve, t):
-        # Sends particle to a reserve() and updates time
+        # Move to reserve and update end time
         self.end = t
         reserve.current.append(self.id)
 
     def roll_speed(self):
-        # Proxy for average speed
+        # Speed proxy
         if (self.type == 'S') and (self.stype == 'M'):
             self.speed = 0
         else:
@@ -53,7 +53,8 @@ class person():
 
 class reserve():
     # Keeps track and sets order for incoming "waves of people"
-    def __init__(self, length, IN, OUT, reserves = []):
+    def __init__(self, id, length, IN, OUT, reserves = []):
+        self.id = id
         self.IN = IN
         self.OUT = OUT
         self.reserves = reserves
@@ -64,7 +65,7 @@ class reserve():
 
 
     def update(self, t):
-        # Move particles on the reserve
+        # Move positions of current persons
         temporal = []
         for index in self.current:
             self.positions[index - 1] -= P[index - 1].speed
@@ -77,7 +78,7 @@ class reserve():
         self.OUT.feed(temporal, t)
 
     def platform(self, N, train_doors, door_pos):
-        # Generate intiial distribution
+        # Generate initial distribution
         for p in P:
             self.current.append(p.id)
         doors = list(np.arange(8)+1)
@@ -88,12 +89,13 @@ class reserve():
         self.positions = np.asarray(D)
 
 class staircase_set():
-    def __init__(self, length = 40, id = 1, mspeed = [1,1,0,0,0,0]):
+    def __init__(self, length, mspeed, id):
         self.length = length
         self.mspeed = np.asarray(mspeed)    # Mechanical staircase speed
         self.matrix = np.zeros([len(self.mspeed), self.length], int)
         self.id = id
         self.wait_line = []
+
 
     def max_mov(self,l, i, id):
         # Calculates the position that a particle can move without "jumping"
@@ -147,8 +149,9 @@ class staircase_set():
     def feed(self, lista, t):
         # Fills the beginning positions, waitlist is only for mechanical stairs
         # The persons in the lista roll for waitlist or normal stairs.
-        for index in lista:
-            P[index-1].start = t
+        if self.id==1:
+            for index in lista:
+                P[index-1].start = t
 
         # Fill Mechanical stairs
         for f in range(len(self.mspeed)):
@@ -199,7 +202,8 @@ def generate_persons(N):
 """ MAIN MAIN MAIN MAIN """
 # Argparse variables
 parser = argparse.ArgumentParser()
-parser.add_argument("stair_length", help = "Steps of stair", type=int)
+parser.add_argument("N", help = "Number of persons", type = int)
+#parser.add_argument("stair_length", help = "Steps of stair", type=int)
 parser.add_argument("w", help = "Probability of going to waitline", type=float)
 #parser.add_argument("s", help = "Probability of stopper", type = float)
 args = parser.parse_args()
@@ -211,57 +215,84 @@ p_move = 1
 w = args.w
 s = 0
 #s = args.s
-n_of_persons = 300
-stair_length = args.stair_length
-T = 800
-iterations = 20
+n_of_persons = args.N
+#stair_length = args.stair_length
+T = 300
+iterations = 10
 
-#outfile = outfile to export data
-Starting_times = np.zeros([iterations, n_of_persons])
-Ending_times = np.zeros([iterations, n_of_persons])
-Mech_start = []
-Mech_end = []
-Norm_start = []
-Norm_end = []
+Starting_times = []
+Ending_times = []
 
 for iter in range(iterations):
     # Generate things for simulation
-    P = generate_persons(n_of_persons)  #list of persons
-    S1 = staircase_set(stair_length)
-    R0 = reserve(20, [], S1)
-    R1 = reserve(20, S1, [])
+    P = generate_persons(n_of_persons)      # List of Persons
+
+    # Things from Nuble station
+    S1 = staircase_set(39, [1,1,0,0,0,0,0,0], 1)
+    S2 = staircase_set(39, [1,1,0,0,0,0,1,1], 2)
+    S3 = staircase_set(52, [1,1,0,0,0,0,0,0], 3)
+    R0 = reserve(0, 20, [], S1)
+    R1 = reserve(1, 20, S1, S2)
+    R2 = reserve(2, 20, S2, S3)
+    R3 = reserve(3, 20, S3, [])
     R0.platform(n_of_persons,4,1)   # Generate platform in starting reserve
+
+    # Occupation holders
+    s1 = np.zeros(T)
+    s2 = np.zeros(T)
+    s3 = np.zeros(T)
+    r0 = np.zeros(T)
+    r1 = np.zeros(T)
+    r2 = np.zeros(T)
+    r3 = np.zeros(T)
 
     # Update in time
     for t in range(T):
+        # Get occupation data
+        r0[t] = len(R0.current)
+        r1[t] = len(R1.current)
+        r2[t] = len(R2.current)
+        r3[t] = len(R3.current)
+        s1[t] = np.add(S1.walkers()[0], S1.walkers()[1])
+        s2[t] = np.add(S2.walkers()[0], S2.walkers()[1])
+        s3[t] = np.add(S3.walkers()[0], S3.walkers()[1])
+
         # Update simulation
         for persona in P:
             persona.roll_speed()
+        S3.update(R2, R3, t)
+        R2.update(t)
+        S2.update(R1, R2, t)
+        R1.update(t)
         S1.update(R0, R1, t)
         R0.update(t)
 
     # Get starting and finishing times
     for p in P:
-        Starting_times[iter, p.id-1] = p.start
-        Ending_times[iter, p.id-1] = p.end
-        if p.stype == 'N':
-            Norm_start.append(p.start)
-            Norm_end.append(p.end)
-        if p.stype == 'M':
-            Mech_start.append(p.start)
-            Mech_end.append(p.end)
+        Starting_times.append(p.start)
+        Ending_times.append(p.end)
 
-# To arrays
-Norm = np.asarray([Norm_start, Norm_end])
-Mech = np.asarray([Mech_start, Mech_end])
+# Transform into arrays for mathemathic operations
+Starting_times = np.asarray(Starting_times)
+Ending_times = np.asarray(Ending_times)
 
-#np.savez(outfile, [stair_length, w], Norm, Mech)    #Export
-
+# Plotting
 plt.figure()
-plt.title('N:'+str(n_of_persons)+' '+'L:'+str(stair_length)+ ' '+'w:'+str(w))
-plt.scatter(Norm[0], Norm[1] - Norm[0], label = "Normal", alpha = 0.3)
-plt.scatter(Mech[0], Mech[1] - Mech[0], label = "Mechanical", alpha = 0.3)
+plt.subplot(211)
+plt.title('w: '+str(w)+'   N: '+str(n_of_persons))
+plt.plot(r0, label = 'r0')
+plt.plot(r1, label = 'r1')
+plt.plot(r2, label = 'r2')
+plt.plot(r3, label = 'r3')
+plt.plot(s1, linewidth = 3, label = 's1')
+plt.plot(s2, linewidth = 3, label = 's2')
+plt.plot(s3, linewidth = 3, label = 's3')
+plt.ylabel('N')
+plt.xlabel('Timestep')
 plt.legend()
-plt.xlabel("Time to door")
-plt.ylabel("Travel time")
+plt.subplot(212)
+plt.scatter(Starting_times, Ending_times - Starting_times, alpha = 0.3)
+plt.xlabel('Time to door')
+plt.ylabel('Travel time')
+plt.tight_layout()
 plt.show()
